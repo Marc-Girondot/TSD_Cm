@@ -1,0 +1,1385 @@
+---
+title: "Embryogrowth thermal reaction norm for Chelonia mydas in Florida"
+author: "Marc Girondot"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  word_document: 
+    fig_width: 8
+    fig_height: 6
+    reference_docx: template.docx
+  html_document:
+    df_print: paged
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.path='figs/Cm_Florida_', 
+                      dev='png', 
+                      concordance=TRUE, 
+                      echo=FALSE)
+```
+
+The last version of embryogrowth package must always be used. The version available in CRAN is generally not the last one. These functions can be used to ensure to use the last version.
+
+```{r echo=TRUE, eval=FALSE}
+install.packages("http://marc.girondot.free.fr/CRAN/HelpersMG.tar.gz", repos=NULL, type="source")
+install.packages("http://marc.girondot.free.fr/CRAN/embryogrowth.tar.gz", repos=NULL, type="source")
+```
+
+
+```{r echo=FALSE}
+suppressMessages(library(embryogrowth))
+packageVersion("embryogrowth")
+suppressMessages(library(readxl))
+suppressMessages(library(lubridate))
+```
+
+
+```{r label=load_results, echo=FALSE}
+load(file=file.path("dataOut", "Gompertz", "resultNest_4p_80_CmFlorida.Rdata"))
+load(file=file.path("dataOut", "Gompertz", "resultNest_6p_80_CmFlorida.Rdata"))
+load(file.path("dataOut", "Gompertz", "result_mcmc_4p_80_CmFlorida.Rdata"))
+load(file.path("dataOut", "Gompertz", "result_mcmc_6p_80_CmFlorida.Rdata"))
+```
+
+The size of hatchlings for *Chelonia mydas* is found in:
+
+Miller JD (1985) Embryology of marine turtles. In: Gans C, Billet F, Maderson PF (eds) Biology of the Reptilia. Wiley-Liss, New-York, US, pp 270-328
+
+Limpus CL, Fleay A, Guinea M (1984) Sea turtles of the Capricornia section, Great Barrier Reef Marine Park The Capricornia Section of the Great Barrier Reef: Past, Present and Future. Royal Society of Queensland and Australian Coral Reef Society, Brisbane, Australia, pp 61-78
+
+SCL= Straight Carapace Length
+
+# Load data
+
+## Nest temperatures
+
+```{r}
+sm <- read_xlsx(path = file.path("dataIn", "Supplementary Material-20250709.xlsx"))
+sm <- as.data.frame(sm)
+sm <- sm[1:(nrow(sm)-2), ]
+rownames(sm) <- paste0(sm$Nest, ".", sm$year)
+sizes <- as.matrix(sm[, grepl("^SCL", colnames(sm))])
+Mean <- apply(sizes, MARGIN = 1, FUN = function(x) mean(x, na.rm=TRUE))
+SD <- apply(sizes, MARGIN = 1, FUN = function(x) sd(x, na.rm=TRUE))
+SD[is.na(SD)] <- sd(as.vector(sizes), na.rm=TRUE)
+
+
+path <- file.path("dataIn", "greens")
+files <- c("2019 CM nest temp summaries girondot.xlsx", "2020 CM nest temp summaries girondot.xlsx", 
+           "2021 CM nest temp summaries girondot.xlsx", "2022 CM nest temp summaries girondot.xlsx", 
+           "2023 CM nest info, temperature, sex ratio girondot.xlsx",
+           "2024 CM nest info, temperature, sex ratio girondot.xlsx")
+
+TempTot <- data.frame(Temperature=numeric(0), Nest=character(0))
+
+green <- NULL
+green_full <- NULL
+sr <- data.frame(Nest=character(), Males=numeric(), Females=numeric())
+for (file in files) {
+  year <- substr(file, 1, 4)
+  nests <- excel_sheets(path=file.path(path, file))
+  for (nest in nests) {
+    dta <- as.data.frame(read_xlsx(path = file.path(path, file), sheet = nest))
+    sr_int <- dta[1, "sex ratio"]
+    if (is.null(sr_int)) sr_int <- dta[1, "Sex Ratio"]
+    sr_int <- strsplit(sr_int, " ")
+    m <- NA
+    f <- NA
+    if (sr_int[[1]][1] != "none") {
+      m <- as.numeric(gsub("M", "", sr_int[[1]][which(grepl("M", sr_int[[1]]))]))
+      f <- as.numeric(gsub("F", "", sr_int[[1]][which(grepl("F", sr_int[[1]]))]))
+      sr <- rbind(sr, data.frame(Nest=gsub(" ", ".", nest), Males=unname(m), Females=unname(f)))
+    }
+    col_Temp <- colnames(dta)[8]
+    if (is.na(col_Temp)) col_Temp <- colnames(dta)[6]
+    col_Time <- colnames(dta)[7]
+    if (is.na(col_Time)) col_Time <- colnames(dta)[5]
+    Time <- dta[, col_Time] 
+    Time <- force_tz(Time, tzone = "Etc/GMT-4")
+    dta2 <- data.frame(Time=Time, Nest=dta[, col_Temp])
+    colnames(dta2) <- c("Time", gsub(" ", ".", paste0(nest, ".", year)))
+    if ((colnames(dta2)[2] != "cm349.cm.900s.2019") & (colnames(dta2)[2] != "cm82.cm500s.2020")) {
+      if ((colnames(dta2)[2] != "cm2.cm200s.2024") & (colnames(dta2)[2] != "CM-090521-&AT-JC.CM1400s.2021")) {
+        TempTot <- rbind(TempTot, data.frame(Temperature=dta2[, 2], Nest=rep(colnames(dta2)[2], nrow(dta2))))
+      }
+      green <- FormatNests(data=dta2                                   , 
+                           previous = green                            , 
+                           Males = m                                   ,
+                           Females = f                                 , 
+                           hatchling.metric.mean = unname(Mean[colnames(dta2)[2]]), 
+                           hatchling.metric.sd = unname(SD[colnames(dta2)[2]])    )
+      green_full <- FormatNests(data=dta2                                   , 
+                           previous = green_full                            , 
+                           Males = m                                   ,
+                           Females = f                                 , 
+                           simplify = FALSE                            ,
+                           hatchling.metric.mean = unname(Mean[colnames(dta2)[2]]), 
+                           hatchling.metric.sd = unname(SD[colnames(dta2)[2]])    )
+    }
+  }
+}
+```
+
+```{r}
+library(collapse)
+psacf(TempTot$Temperature, g=TempTot$Nest, lag.max=3000, las=1, bty="n", 
+      xaxt="n", main="", xlab="Lag in days")
+time_xaxis <- ((1:3000-1)*15)/60/24
+
+axis(1, which(time_xaxis-floor(time_xaxis) == 0), 
+     labels = time_xaxis[which(time_xaxis-floor(time_xaxis) == 0)])
+```
+
+
+## Data for nests with sex ratio
+
+```{r}
+males <- unlist(sapply(green$Nests, FUN = function(x) x$Males))
+females <- unlist(sapply(green$Nests, FUN = function(x) x$Females))
+sexed <- males + females
+layingtime <- do.call(c, sapply(green$Nests, FUN = function(x) as.POSIXlt(x$LayingTime)))
+pippingtime <- do.call(c, sapply(green$Nests, FUN = function(x) as.POSIXlt(x$LayingTime+x$data[nrow(x$data), "Time"]*60)))
+maxT <- unlist(sapply(green$Nests, FUN = function(x) max(x$data[, "Temperatures C"])))
+
+deltatime <- unlist(sapply(green$Nests, FUN = function(x) min(diff(x$data[, "Time"]))))
+deltatime[which(deltatime != 15)]
+```
+
+```{r}
+file.path("dataIn", "data_stream-oper_stepType-instant.nc")
+
+library(ncdf4)
+fnc <- nc_open(file.path("dataIn", "data_stream-oper_stepType-instant.nc"))
+ncatt_get(fnc, varid="t2m")
+totTemp <- ncvar_get(fnc, varid="t2m")
+Temp <- totTemp-273.15
+
+ag <- unlist(lapply(1:(length(Temp)/4*10), FUN=function(x) rep(x = x, times=4*10)))[1:length(Temp)]
+
+agr <- aggregate(Temp, by=list(ag), FUN=mean)
+agr_max <- aggregate(Temp, by=list(ag), FUN=max)
+```
+
+
+
+```{r}
+a <- plot(x=green, time = "absolute", show.legend.names = FALSE, show.heterogeneity = FALSE,
+          col= rainbow(length(green$Nests), alpha = 1), xlim = "auto-year", ylim=c(25, 40), 
+          xlab.axis = c("01-2019", "", "", "", "", "", "", "", "", "", "", "", 
+                        "01-2020", "", "", "", "", "", "", "", "", "", "", "", 
+                        "01-2021", "", "", "", "", "", "", "", "", "", "", "", 
+                        "01-2022", "", "", "", "", "", "", "", "", "", "", "", 
+                        "01-2023", "", "", "", "", "", "", "", "", "", "", "", 
+                        "01-2024", "", "", "", "", "", "", "", "", "", "", "", 
+                        "01-2025"))
+
+
+png(filename = "Figure 1.png", width = 7*300, height = 10*300, pointsize = 12, res=300)
+svg(filename = "Figure 1.svg", width = 7, height = 10, pointsize = 12)
+
+layout(1:3)
+par(mar=c(4, 4, 1, 1))
+
+plot(x=green, time = "absolute", show.legend.names = FALSE, show.heterogeneity = FALSE,
+     col= rainbow(length(green$Nests), alpha = 1), xlim = "auto-year", 
+     ylim=c(20, 40), yaxt="n", 
+     xlab.axis = rep("", 73))
+
+tc <- seq(from=ScalePreviousPlot(x=0.0, y=0.0)$x, by=6*60*60, length.out=length(Temp))
+tc2 <- seq(from=ScalePreviousPlot(x=0.0, y=0.0)$x, by=10*4*6*60*60, length.out=nrow(agr))
+
+lines(x=tc2, y=agr$x, lwd=0.5)
+# lines(x=tc2, y=agr_max$x, lwd=0.5, lty=2)
+# lines(x=tc, 
+#       y=Temp, col=rgb(red = 0.05, green = 0.05, blue=0.05, alpha = 0.3))
+
+axis(2, 20:36, las=1)
+
+segments(x0=tc2[1], x1=tc2[length(tc2)], y1=38, y0=38, lty=3)
+segments(x0=tc2[1], x1=tc2[length(tc2)], y1=40, y0=40, lty=3)
+segments(x0=tc2[1], x1=tc2[length(tc2)], y1=39, y0=39, lty=4)
+
+
+for (i in seq_along(a))
+  mtext(c("01-2019", "", "", "", "", "", "", "", "", "", "", "", 
+          "01-2020", "", "", "", "", "", "", "", "", "", "", "", 
+          "01-2021", "", "", "", "", "", "", "", "", "", "", "", 
+          "01-2022", "", "", "", "", "", "", "", "", "", "", "", 
+          "01-2023", "", "", "", "", "", "", "", "", "", "", "", 
+          "01-2024", "", "", "", "", "", "", "", "", "", "", "", 
+          "01-2025")[i], side = 1, at=a[i], line=1)
+
+text(x = ScalePreviousPlot(x=0.95, y=0.05)$x, y=ScalePreviousPlot(x=0.95, y=0.05)$y, labels = "A", cex=2)
+
+points(x=as.numeric(layingtime)+(as.numeric(pippingtime)-as.numeric(layingtime))/2, y=38+2*males/sexed, pch=19)
+mtext("Males", side = 2, line=3, at=39, cex=0.65)
+
+axis(2, 38:40, labels = c("0", "0.5", "1"), las=1)
+
+HeterogeneityNests(nests = green_full, 
+                   show.first.half.incubation = TRUE, 
+                   show.full.incubation = FALSE, 
+                   control.legend.metabolicheating = list(plot=FALSE), 
+                   control.legend.total = list(x="topright", cex=1.2), 
+                   show.sd = FALSE, 
+                   probs=c(0.025, 0.975), 
+                   ylab="Heterogeneity in °C (95% quantiles)", 
+                   ylim=c(0, 4), 
+                   pch.absolute.difference.first = 19, 
+                   col.absolute.difference.first = rgb(blue=1, green=0.1, red=0.1, alpha=0.005), 
+                          n.iter=50000, n.adapt=50000, thin=10, adaptive=TRUE, return.mcmc=TRUE, 
+                          trace=TRUE)
+text(x = ScalePreviousPlot(x=0.95, y=0.05)$x, y=ScalePreviousPlot(x=0.95, y=0.05)$y, labels = "B", cex=2)
+
+if (FALSE)
+HeterogeneityNests(nests = green_full, 
+                   show.first.half.incubation = TRUE, 
+                   show.full.incubation = FALSE, 
+                   control.legend.metabolicheating = list(plot=FALSE), 
+                   control.legend.total = list(x="topright", cex=1.2), 
+                   show.sd = TRUE, 
+                   probs=c(0, 1), 
+                   ylab="Heterogeneity in °C (range)", 
+                   ylim=c(0, 4), 
+                   pch.absolute.difference.first = 19, 
+                   col.absolute.difference.first = rgb(blue=1, green=0.1, red=0.1, alpha=0.01), 
+                          n.iter=50000, n.adapt=50000, thin=10, adaptive=TRUE, return.mcmc=TRUE, 
+                          trace=TRUE)
+text(x = ScalePreviousPlot(x=0.95, y=0.05)$x, y=ScalePreviousPlot(x=0.95, y=0.05)$y, labels = "B", cex=2)
+
+par(mar=c(4, 4, 1, 1))
+psacf(TempTot$Temperature, g=TempTot$Nest, lag.max=3000, las=1, bty="n", xaxt="n", main="", xlab="Lag in days")
+
+axis(1, which(time_xaxis-floor(time_xaxis) == 0), labels = time_xaxis[which(time_xaxis-floor(time_xaxis) == 0)])
+text(x = ScalePreviousPlot(x=0.95, y=0.05)$x, y=ScalePreviousPlot(x=0.95, y=0.95)$y, labels = "C", cex=2)
+
+dev.off()
+
+
+HeterogeneityNests(nests = green)
+
+
+for (i in green$Names)
+  plot(x=green, 
+       time = "absolute", 
+       show.legend.names = FALSE, 
+       series = i, 
+       show.heterogeneity = FALSE, 
+       col="red", 
+       main=i)
+
+```
+
+# Distribution of observed among-nests sex ratio
+
+```{r}
+males <- c(9, 0, 0, 0, 0, 0, 0, 0, 0, 3, 9, 0, 0, 0, 0, 0, 0, 0, 5, 2, 9, 1, 0, 0, 0, 0, 0, 2, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+sexed <- c(10, 2, 9, 8, 10, 10, 6, 10, 10, 10, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 9, 8, 10, 2, 10, 8, 10, 10, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 9, 8, 10, 9, 10, 1, 10, 10, 10, 10, 10, 9, 10, 10, 10, 10, 8, 10, 10, 10, 10)
+p <- sum(males)/sum(sexed)
+sdObs <- sd(males/sexed)
+k <- NULL
+for (i in 1:10000)
+  k <- c(k, sd(rbinom(length(sexed), sexed, p)/sexed))
+
+hist(k)
+
+mean(k); sum(k>sdObs)
+```
+
+
+# Fit embryo growth: Gompertz
+
+## Fit of 4 parameters model
+
+```{r label=fit4, eval=FALSE}
+x4 <- c('DHA' = 465.78694470965297, 
+        'DHH' = 492.80137996187796, 
+        'T12H' = 300.10435627299881, 
+        'Rho25' = 157.64994404255313)
+
+pfixed <- c('rK' = 1.208968)
+
+resultNest_4p_80_CmFlorida <- searchR(parameters=x4,
+                                      fixed.parameters=pfixed, 
+                                      temperatures=green, 
+                                      integral = integral.Gompertz, 
+                                      M0 = 0.3470893)
+
+save(resultNest_4p_80_CmFlorida, 
+     file=file.path("dataOut", "Gompertz", "resultNest_4p_80_CmFlorida.Rdata"))
+```
+
+```{r label=plotfit4}
+load(file=file.path("dataOut", "Gompertz", "resultNest_4p_80_CmFlorida.Rdata"))
+plotR(resultNest_4p_80_CmFlorida, curve = "ML quantiles", 
+      ylim=c(0, 6), show.hist = TRUE, xlim=c(24, 38), 
+      ylimH=c(0,0.8), atH=c(0, 0.1, 0.2))
+```
+
+## Fit of 6 parameters model
+
+```{r label=fit6, eval=FALSE}
+
+x4 <- resultNest_4p_80_CmFlorida$par
+x6 <- c(x4["DHA"], 
+        x4["DHH"], 
+        'DHL' = x4[["DHH"]], 
+        'DT' = 0.5, 
+        'T12L' = x4[["T12H"]], 
+        x4['Rho25'])
+
+plotR(x6, ylim = c(0,4), curve="ML")
+
+pfixed <- c('rK' = 1.208968)
+
+resultNest_6p_80_CmFlorida <- searchR(parameters=x6,
+                                      fixed.parameters=pfixed, 
+                                      temperatures=green, 
+                                      integral = integral.Gompertz, 
+                                      M0 = 0.3470893)
+save(resultNest_6p_80_CmFlorida, 
+     file=file.path("dataOut", "Gompertz", "resultNest_6p_80_CmFlorida.Rdata"))
+```
+
+```{r label=plotfit6}
+load(file=file.path("dataOut", "Gompertz", "resultNest_6p_80_CmFlorida.Rdata"))
+plotR(resultNest_6p_80_CmFlorida, curve = "ML quantiles", 
+      ylim=c(0, 6), show.hist = TRUE, xlim=c(24, 38), 
+      ylimH=c(0,0.8), atH=c(0, 0.1, 0.2))
+```
+
+## Comparison of the different models
+
+```{r label=compareAIC}
+compare_AICc(Cm4p=resultNest_4p_80_CmFlorida, 
+             Cm6p=resultNest_6p_80_CmFlorida)
+```
+
+# Fit embryo growth - MCMC
+
+```{r label=SE4, eval=FALSE}
+pMCMC <- TRN_MHmcmc_p(resultNest_4p_80_CmFlorida, accept = TRUE)
+pMCMC[, "Init"] <- c('DHA' = 483.73575799811715, 
+                     'DHH' = 529.78876960688467, 
+                     'T12H' = 301.12106825922194, 
+                     'Rho25' = 86.119677504968777)
+
+pMCMC["T12H", "Density"] <- "dnorm"
+pMCMC["T12H", "Prior1"] <- 302.15
+pMCMC["T12H", "Prior2"] <- 2
+pMCMC["T12H", "Min"] <- 299
+pMCMC["T12H", "Max"] <- 305
+
+pMCMC[, "SDProp"] <- c('DHA' = 6.221566108635062, 
+                       'DHH' = 11.554337058893685, 
+                       'T12H' = 0.08165495318086384, 
+                       'Rho25' = 3.3500740584958026)
+result_mcmc_4p_80_CmFlorida <- GRTRN_MHmcmc(result=resultNest_4p_80_CmFlorida  , 
+                                            parametersMCMC=pMCMC               , 
+                                            n.iter=10000                       , 
+                                            n.chains = 1                       , 
+                                            n.adapt = 1000                      , 
+                                            thin=10                            , 
+                                            WAIC=TRUE                          , 
+                                            adaptive=TRUE                      , 
+                                            trace=TRUE                         )
+save(result_mcmc_4p_80_CmFlorida, 
+     file=file.path("dataOut", "Gompertz", "result_mcmc_4p_80_CmFlorida.Rdata"))
+
+plot(result_mcmc_4p_80_CmFlorida, what = "lnl")
+plot(result_mcmc_4p_80_CmFlorida, what = "markovchain", parameters = "DHA")
+plot(result_mcmc_4p_80_CmFlorida, what = "markovchain", parameters = "DHH")
+plot(result_mcmc_4p_80_CmFlorida, what = "markovchain", parameters = "T12H", ylim=c(295, 305))
+plot(result_mcmc_4p_80_CmFlorida, what = "markovchain", parameters = "Rho25")
+d(as.parameters(result_mcmc_4p_80_CmFlorida, index = "median"))
+
+```
+
+```{r label=SE6, eval=FALSE}
+pMCMC <- TRN_MHmcmc_p(resultNest_6p_80_CmFlorida, accept = TRUE)
+pMCMC["T12L", "Density"] <- "dnorm"
+pMCMC["T12L", "Prior1"] <- 302.15
+pMCMC["T12L", "Prior2"] <- 2
+pMCMC["T12L", "Min"] <- 299
+pMCMC["T12L", "Max"] <- 305
+
+pMCMC["DT", "Density"] <- "dnorm"
+pMCMC["DT", "Prior1"] <- 20
+pMCMC["DT", "Prior2"] <- 10
+pMCMC["DT", "Min"] <- 0
+pMCMC["DT", "Max"] <- 100
+
+pMCMC[, "SDProp"] <- c('DHA' = 4.6322839440113581, 
+                       'DHH' = 190.04963774880824, 
+                       'DHL' = 4.6322839440113581, 
+                       'DT' = 190.04963774880824, 
+                       'T12L' = 0.11290763188039799, 
+                       'Rho25' = 15.97665278648816)
+
+result_mcmc_6p_80_CmFlorida <- GRTRN_MHmcmc(result=resultNest_6p_80_CmFlorida, 
+                                            parametersMCMC=pMCMC, n.iter=10000, 
+                                            n.chains = 1, n.adapt = 100, thin=10, 
+                                            WAIC=TRUE                          , 
+                                            adaptive=TRUE, 
+                                            intermediate = 100, 
+                                            filename = "intermediate6p.Rdata",
+                                            trace=TRUE)
+save(result_mcmc_6p_80_CmFlorida, 
+     file=file.path("dataOut", "Gompertz", "result_mcmc_6p_80_CmFlorida.Rdata"))
+
+plot(result_mcmc_6p_80_CmFlorida, what = "lnl")
+plot(result_mcmc_6p_80_CmFlorida, what = "markovchain", parameters = "DHA")
+plot(result_mcmc_6p_80_CmFlorida, what = "markovchain", parameters = "DHH")
+plot(result_mcmc_6p_80_CmFlorida, what = "markovchain", parameters = "DHL")
+plot(result_mcmc_6p_80_CmFlorida, what = "markovchain", parameters = "T12L", ylim=c(295, 305))
+plot(result_mcmc_6p_80_CmFlorida, what = "markovchain", parameters = "DT")
+plot(result_mcmc_6p_80_CmFlorida, what = "markovchain", parameters = "Rho25")
+d(as.parameters(result_mcmc_6p_80_CmFlorida, index = "median"))
+```
+
+# WAIC test
+
+```{r}
+library(loo)
+
+result_mcmc_4p_80_CmFlorida_loo <- loo::loo(result_mcmc_4p_80_CmFlorida$WAIC)
+result_mcmc_6p_80_CmFlorida_loo <- loo::loo(result_mcmc_6p_80_CmFlorida$WAIC)
+
+llok <- loo_compare(list(p4p=result_mcmc_4p_80_CmFlorida_loo, 
+                         p6p=result_mcmc_6p_80_CmFlorida_loo))
+print(llok, simplify=FALSE)
+
+```
+
+# Fitted Growth rate of embryos with informative temperatures: MCMC
+
+```{r label=plotRhist}
+load(file=file.path("dataOut", "Gompertz", "resultNest_4p_80_CmFlorida.Rdata"))
+load(file=file.path("dataOut", "Gompertz", "result_mcmc_4p_80_CmFlorida.Rdata"))
+layout(1)
+pdf(file="Growth_Cm.pdf", width = 7, height = 6, pointsize = 14)
+for (i in 1:resultNest_4p_80_CmFlorida$data$IndiceT["NbTS"])
+  plot(resultNest_4p_80_CmFlorida, GTRN.CI = "MCMC",
+       resultmcmc=result_mcmc_4p_80_CmFlorida, 
+       replicate.CI = 100, series=i, 
+       show.stages = FALSE, 
+       ylimS = c(0, 60), xlim=c(0, 60),  ylimT = c(20, 40), 
+       embryo.stages = "Chelonia mydas.SCL", ylab="Eq. SCL in mm", las=1, 
+       main=names(resultNest_4p_80_CmFlorida$data)[i])
+dev.off()
+
+png(file="TRN Growth.png", width = 7*300, height = 8*300, pointsize = 14, res=300)
+svg(file="TRN Growth.svg", width = 7, height = 8, pointsize = 14)
+layout(1:2)
+plotR(resultNest_4p_80_CmFlorida, ylim=c(0, 6), xlim=c(24,38), 
+      curve="MCMC quantiles", 
+      lty = 1,
+      ltyCI = 2,
+      lwd = 2,
+      lwdCI = 2,
+      replicate.CI = 1000, 
+      resultmcmc=result_mcmc_4p_80_CmFlorida, 
+      ylimH=c(0,0.8), atH=c(0, 0.1, 0.2), show.hist = TRUE)
+par(xpd=TRUE)
+text(x = ScalePreviousPlot(x=0.05, y=1)$x, y=ScalePreviousPlot(x=0.05, y=1)$y, labels = "A", cex=2)
+
+plot(resultNest_4p_80_CmFlorida, GTRN.CI = "MCMC",
+     replicate.CI = 1000, 
+     show.third = FALSE, 
+     mar = c(4, 5, 1, 5) + 0.3,
+     xlim=c(0, 50), 
+     resultmcmc=result_mcmc_4p_80_CmFlorida, series = 2,  # "CM-090521-&AT-JC.CM1400s", 
+     embryo.stages = "Chelonia mydas.SCL", ylab="Eq. SCL in mm", las=1)
+par(xpd=TRUE)
+text(x = ScalePreviousPlot(x=0.05, y=1.1)$x, y=ScalePreviousPlot(x=0.05, y=1.1)$y, labels = "B", cex=2)
+
+dev.off()
+```
+
+
+## Get statistics of nests
+
+### TSP from constant incubation temperatures
+
+```{r label=StatsNests, eval=FALSE}
+StatsCm <- info.nests(resultNest_4p_80_CmFlorida, series="all", out="summary", 
+                      resultmcmc=result_mcmc_4p_80_CmFlorida, 
+                      replicate.CI=1000, 
+                      GTRN.CI="MCMC", 
+                      embryo.stages = "Chelonia mydas.SCL", 
+                      tsd = tsd_flexit, tsd.mcmc = flexit_CM, tsd.CI = "MCMC", 
+                      progress=TRUE)
+save(StatsCm, file=file.path("dataOut", "StatsCm.Rdata"))
+```
+
+```{r}
+load(file=file.path("dataOut", "StatsCm.Rdata"))
+
+sr <- StatsCm$summary[, c("Series", "TSP.TimeWeighted.sexratio.quantile_0.025",
+                          "TSP.TimeWeighted.sexratio.quantile_0.5", 
+                          "TSP.TimeWeighted.sexratio.quantile_0.975", 
+                          "TSP.GrowthWeighted.sexratio.quantile_0.025", 
+                          "TSP.GrowthWeighted.sexratio.quantile_0.5", 
+                          "TSP.GrowthWeighted.sexratio.quantile_0.975", 
+                          "TSP.TimeWeighted.GrowthRateWeighted.sexratio.quantile_0.025", 
+                          "TSP.TimeWeighted.GrowthRateWeighted.sexratio.quantile_0.5", 
+                          "TSP.TimeWeighted.GrowthRateWeighted.sexratio.quantile_0.975")]
+
+# colnames(StatsCm$summary)[grepl("sexratio", colnames(StatsCm$summary))]
+
+plot_errbar(males/sexed, sr[names(sexed), "TSP.TimeWeighted.sexratio.quantile_0.5"], 
+            y.plus = sr[names(sexed), "TSP.TimeWeighted.sexratio.quantile_0.975"], 
+            y.minus = sr[names(sexed), "TSP.TimeWeighted.sexratio.quantile_0.025"], 
+            las=1, bty="n", xlim=c(0, 1), ylim=c(0, 1), 
+            ylab="Predicted sex ratio")
+segments(x0=0, x1=1, y0=0, y1=1, lty=2)
+cor(x=unname(males/sexed)[!is.na(unname(males/sexed))], y=unname(sr[names(sexed), "TSP.TimeWeighted.sexratio.quantile_0.5"])[!is.na(unname(males/sexed))])^2
+
+
+plot_errbar(males/sexed, sr[names(sexed), "TSP.GrowthWeighted.sexratio.quantile_0.5"], 
+            y.plus = sr[names(sexed), "TSP.GrowthWeighted.sexratio.quantile_0.975"], 
+            y.minus = sr[names(sexed), "TSP.GrowthWeighted.sexratio.quantile_0.025"], 
+            las=1, bty="n", xlim=c(0, 1), ylim=c(0, 1), 
+            ylab="Predicted sex ratio")
+segments(x0=0, x1=1, y0=0, y1=1, lty=2)
+cor(x=unname(males/sexed)[!is.na(unname(males/sexed))], y=unname(sr[names(sexed), "TSP.GrowthWeighted.sexratio.quantile_0.5"])[!is.na(unname(males/sexed))])^2
+
+plot_errbar(males/sexed, sr[names(sexed), "TSP.TimeWeighted.GrowthRateWeighted.sexratio.quantile_0.5"], 
+            y.plus = sr[names(sexed), "TSP.TimeWeighted.GrowthRateWeighted.sexratio.quantile_0.975"], 
+            y.minus = sr[names(sexed), "TSP.TimeWeighted.GrowthRateWeighted.sexratio.quantile_0.025"], 
+            las=1, bty="n", xlim=c(0, 1), ylim=c(0, 1), 
+            ylab="Predicted sex ratio")
+segments(x0=0, x1=1, y0=0, y1=1, lty=2)
+cor(x=unname(males/sexed)[!is.na(unname(males/sexed))], y=unname(sr[names(sexed), "TSP.TimeWeighted.GrowthRateWeighted.sexratio.quantile_0.5"])[!is.na(unname(males/sexed))])^2
+```
+
+# Modèles de sex ratio
+
+```{r}
+resultNest_4p_80_CmFlorida_ec <- resultNest_4p_80_CmFlorida
+resultNest_4p_80_CmFlorida_ec$par <- as.parameters(result_mcmc_4p_80_CmFlorida, index="median")
+
+tsd_flexit_ec <- tsd_flexit
+tsd_flexit_ec$par <- as.parameters(flexit_CM, index="median")
+```
+
+# Without new parameters
+
+```{r}
+TW_TSP_fixed_flexit <- STRN(Initial_STRN =  NULL , 
+                            fixed.parameters = NULL                                                        , 
+                            embryo.stages = "Chelonia mydas.SCL"                                                     ,
+                            EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                            sexratio = "TSP.TimeWeighted.sexratio.mean"                   , 
+                            tsd=tsd_flexit_ec                                                               , 
+                            Sexed=sexed                                                                  , 
+                            Males=males                                                                  ,
+                            verbose = FALSE                                                              , 
+                            parallel = TRUE                                                              , 
+                            zero=1E-9                                                                    ,
+                            fill=60                                                                      , 
+                            hessian=FALSE                                                                , 
+                            itnmax = 0                                                                ,
+                            method = c("BFGS")                                                    ) 
+
+save(TW_TSP_fixed_flexit, file = file.path("dataOut", "Gompertz", "TW_TSP_fixed_flexit.Rdata"))
+TW_TSP_fixed_flexit$AICc
+
+TW.GW_TSP_fixed_flexit <- STRN(Initial_STRN =  NULL , 
+                               fixed.parameters = NULL                                                        , 
+                               embryo.stages = "Chelonia mydas.SCL"                                                     ,
+                               EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                               sexratio = "TSP.TimeWeighted.GrowthRateWeighted.sexratio.mean"                   , 
+                               tsd=tsd_flexit_ec                                                               , 
+                               Sexed=sexed                                                                  , 
+                               Males=males                                                                  ,
+                               verbose = FALSE                                                              , 
+                               parallel = TRUE                                                              , 
+                               zero=1E-9                                                                    ,
+                               fill=60                                                                      , 
+                               hessian=FALSE                                                                , 
+                               itnmax = 0                                                                ,
+                               method = c("BFGS")                                                    ) 
+
+save(TW.GW_TSP_fixed_flexit, file = file.path("dataOut", "Gompertz", "TW.GW_TSP_fixed_flexit.Rdata"))
+TW.GW_TSP_fixed_flexit$AICc
+
+GW_TSP_fixed_flexit <- STRN(Initial_STRN =  NULL , 
+                            fixed.parameters = NULL                                                        , 
+                            embryo.stages = "Chelonia mydas.SCL"                                                     ,
+                            EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                            sexratio = "TSP.GrowthWeighted.sexratio.mean"                   , 
+                            tsd=tsd_flexit_ec                                                               , 
+                            Sexed=sexed                                                                  , 
+                            Males=males                                                                  ,
+                            verbose = FALSE                                                              , 
+                            parallel = TRUE                                                              , 
+                            zero=1E-9                                                                    ,
+                            fill=60                                                                      , 
+                            hessian=FALSE                                                                , 
+                            itnmax = 0                                                                ,
+                            method = c("BFGS")                                                    ) 
+
+save(GW_TSP_fixed_flexit, file = file.path("dataOut", "Gompertz", "GW_TSP_fixed_flexit.Rdata"))
+GW_TSP_fixed_flexit$AICc
+
+```
+
+## First try with TRNS as  trigo model 
+
+```{r}
+TSP <- c('BeginTSP' = -0.91686572761423635, 
+         'EndTSP' = 1.5004485182755278)
+invlogit(TSP)
+
+
+TRNS <- c('MinB' = 10)
+
+force <- c('dbeta_shape1' = 1, 
+           'dbeta_shape2' = 1)
+
+
+ip <- c(TRNS, force, TSP)
+
+fp <- c(Max=100, 'Peak' = 50, 
+        'LengthB' = 50, 
+        'LengthE' = 50, 'MinE' = 10)
+
+
+TRNS_TSP_fixed_flexit <- STRN(Initial_STRN = c('Peak' = 50, 
+                                               'LengthB' = 50, 
+                                               'LengthE' = 50, 'Min' = 10)                                                            , 
+                              fixed.parameters = c(Max=100)                                                        , 
+                              embryo.stages = "Chelonia mydas.SCL"                                                     ,
+                              EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                              sexratio = "TSP.GrowthWeighted.STRNWeighted.sexratio.mean"                   , 
+                              tsd=tsd_flexit_ec                                                               , 
+                              Sexed=sexed                                                                  , 
+                              Males=males                                                                  ,
+                              verbose = FALSE                                                              , 
+                              parallel = TRUE                                                              , 
+                              zero=1E-9                                                                    ,
+                              fill=60                                                                      , 
+                              hessian=FALSE                                                                , 
+                              itnmax = 1000                                                                ,
+                              method = c("BFGS")                                                    ) 
+save(TRNS_TSP_fixed_flexit, file = file.path("dataOut", "Gompertz", "TRNS_TSP_fixed_flexit.Rdata"))
+
+
+TRNS_TSP_fixed_flexit$par
+
+TRNS <- c('Peak' = -7.5875654157444652, 
+          'LengthB' = 89.22687204054813, 
+          'LengthE' = 36.873396687900652, 
+          'Min' = 0.0033493993765771066, 'Max' = 100)
+
+plot(20:40, getFromNamespace(".SSM", ns="embryogrowth")(T=20:40, parms=TRNS)[[1]]*1000, type="l")
+
+p <- ChangeSSM(parameters = TRNS, 
+               initial.parameters = c('DHA' = 109.33096767623562, 
+                                      'DHH' = 617.63906433653312, 
+                                      'T12H' = 306.38833673770955), 
+               fixed.parameters = c('Rho25' = 100))
+
+plot(20:40, getFromNamespace(".SSM", ns="embryogrowth")(T=20:40, parms=c(p$par, 'Rho25' = 100))[[1]]*1000, type="l")
+```
+
+## TRNS
+
+```{r}
+TRNS_TSP_fixed_flexit <- STRN(Initial_STRN = c('DHA' = -582.63858520908752, 
+                                               'DHH' = 685.20357374674995, 
+                                               'T12H' = 552.20446499322202)                                                            , 
+                              fixed.parameters = c(Max=100)                                                        , 
+                              embryo.stages = "Chelonia mydas.SCL"                                                     ,
+                              EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                              sexratio = "TSP.GrowthWeighted.STRNWeighted.sexratio.mean"                   , 
+                              tsd=tsd_flexit_ec                                                               , 
+                              Sexed=sexed                                                                  , 
+                              Males=males                                                                  ,
+                              verbose = FALSE                                                              , 
+                              parallel = TRUE                                                              , 
+                              zero=1E-9                                                                    ,
+                              fill=60                                                                      , 
+                              hessian=FALSE                                                                , 
+                              itnmax = 1000                                                                ,
+                              method = c("BFGS")                                                    ) 
+save(TRNS_TSP_fixed_flexit, file = file.path("dataOut", "Gompertz", "TRNS_TSP_fixed_flexit.Rdata"))
+TRNS_TSP_fixed_flexit$AICc
+
+
+StatsCm_TRNS <- info.nests(resultNest_4p_80_CmFlorida, series="all", out="summary", 
+                           resultmcmc=result_mcmc_4p_80_CmFlorida, 
+                           replicate.CI=1000, 
+                           GTRN.CI="MCMC", 
+                           embryo.stages = "Chelonia mydas.SCL", 
+                           SexualisationTRN = TRNS_TSP_fixed_flexit, 
+                           SexualisationTRN.CI = NULL, 
+                           tsd = tsd_flexit, tsd.mcmc = flexit_CM, tsd.CI = "MCMC", 
+                           progress=TRUE)
+
+save(StatsCm_TRNS, file=file.path("dataOut", "StatsCm_TRNS.Rdata"))
+
+sr <- StatsCm_TRNS$summary[, c("Series", "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025",
+                               "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5", 
+                               "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975")]
+
+plot_errbar(males/sexed, sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"], 
+            y.plus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975"], 
+            y.minus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025"], 
+            las=1, bty="n", xlim=c(0, 1), ylim=c(0, 1), 
+            ylab="Predicted sex ratio")
+segments(x0=0, x1=1, y0=0, y1=1, lty=2)
+cor(x=unname(males/sexed)[!is.na(unname(males/sexed))], y=unname(sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"])[!is.na(unname(males/sexed))])^2
+```
+
+
+## Modèle TRNS Force
+
+
+```{r}
+TRNS_Force_TSP_fixed_flexit <- STRN(Initial_STRN =  c('DHA' = -582.63858520908752, 
+                                                      'DHH' = 685.20357374674995, 
+                                                      'T12H' = 552.20446499322202, force)                                                           , 
+                                    fixed.parameters = c('Rho25' = 100)                                                        , 
+                                    embryo.stages = "Chelonia mydas.SCL"                                                     ,
+                                    EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                                    sexratio = "TSP.GrowthWeighted.STRNWeighted.sexratio.mean"                   , 
+                                    tsd=tsd_flexit_ec                                                               , 
+                                    Sexed=sexed                                                                  , 
+                                    Males=males                                                                  ,
+                                    verbose = FALSE                                                              , 
+                                    parallel = TRUE                                                              , 
+                                    zero=1E-9                                                                    ,
+                                    fill=60                                                                      , 
+                                    hessian=FALSE                                                                , 
+                                    itnmax = 1000                                                                ,
+                                    method = c("BFGS")                                                    ) 
+save(TRNS_Force_TSP_fixed_flexit, file = file.path("dataOut", "Gompertz", "TRNS_Force_TSP_fixed_flexit.Rdata"))
+TRNS_Force_TSP_fixed_flexit$AICc
+
+
+priors <- TRN_MHmcmc_p(result = TRNS_Force_TSP_fixed_flexit, accept = TRUE)
+priors[c("dbeta_shape1", "dbeta_shape2"), "SDProp"] <- 0.005
+priors[c("dbeta_shape1", "dbeta_shape2"), c("Prior1", "Min")] <- 1E-4
+priors[c("dbeta_shape1", "dbeta_shape2"), c("Prior2", "Max")] <- 10
+
+MCMC_TRNS_Force_TSP_fixed_flexit <- STRN_MHmcmc(result = TRNS_Force_TSP_fixed_flexit, 
+                                                parametersMCMC = priors, adaptive = FALSE, 
+                                                n.iter = 10000, thin = 10, n.adapt = 1000, 
+                                                intermediate = 500, 
+                                                trace = TRUE, WAIC=FALSE)
+
+save(MCMC_TRNS_Force_TSP_fixed_flexit, file=file.path("dataOut", "MCMC_TRNS_Force_TSP_fixed_flexit.Rdata"))
+
+options(mc.cores = detectCores())
+
+StatsCm_TRNS_Force <- info.nests(resultNest_4p_80_CmFlorida, series="all", out="summary", 
+                                 resultmcmc=result_mcmc_4p_80_CmFlorida, 
+                                 replicate.CI=1000, 
+                                 GTRN.CI="MCMC", 
+                                 embryo.stages = "Chelonia mydas.SCL", 
+                                 SexualisationTRN = TRNS_Force_TSP_fixed_flexit, 
+                                 SexualisationTRN.mcmc = MCMC_TRNS_Force_TSP_fixed_flexit, 
+                                 SexualisationTRN.CI = "MCMC", 
+                                 tsd = tsd_flexit, tsd.mcmc = flexit_CM, tsd.CI = "MCMC", 
+                                 progress=TRUE)
+
+save(StatsCm_TRNS_Force, file=file.path("dataOut", "StatsCm_TRNS_Force.Rdata"))
+```
+
+
+```{r}
+load(file=file.path("dataOut", "StatsCm_TRNS_Force.Rdata"))
+load(file = file.path("dataOut", "Gompertz", "TRNS_Force_TSP_fixed_flexit.Rdata"))
+load(file=file.path("dataOut", "MCMC_TRNS_Force_TSP_fixed_flexit.Rdata"))
+sr <- StatsCm_TRNS_Force$summary[, c("Series", "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025",
+                                     "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5", 
+                                     "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975")]
+
+sr_CmFlorida <- getFromNamespace(".BinomialConfidence", ns="HelpersMG")(x=males, n=sexed)
+
+par_Force_TRNS <- MCMC_TRNS_Force_TSP_fixed_flexit$resultMCMC[[1]]
+
+outForce <- matrix(data = NA, ncol = length(seq(from=0.01, to=0.99, by=0.01)), nrow = nrow(par_Force_TRNS))
+for (i in 1:nrow(par_Force_TRNS)) {
+  outForce[i, ] <- dbeta(x=seq(from=0.01, to=0.99, by=0.01), shape1=par_Force_TRNS[i, "dbeta_shape1"], shape2=par_Force_TRNS[i, "dbeta_shape2"])
+}
+
+Force <- apply(outForce, MARGIN=2, function(x) quantile(x, probs = c(0.025, 0.5, 0.975)))
+
+outTRSN <- matrix(data = NA, ncol = length(seq(from=25, to=40, by=0.1)), nrow = nrow(par_Force_TRNS))
+
+for (i in 1:nrow(par_Force_TRNS)) {
+  outTRSN[i, ] <- getFromNamespace(".SSM", ns="embryogrowth")(T=seq(from=25, to=40, by=0.1), c(par_Force_TRNS[i, ], Rho25=100))[[1]]
+}
+
+TRNS <- apply(outTRSN, MARGIN=2, function(x) quantile(x, probs = c(0.025, 0.5, 0.975)))
+colnames(TRNS) <- as.character(seq(from=25, to=40, by=0.1))
+TRNS <- TRNS * 1E7
+
+
+stagesMiller2017 <- matrix(c(11,	4.31211499,
+                             12,	5.248459959,
+                             13,	6.028747433,
+                             14,	7.277207392,
+                             15,	8.837782341,
+                             16,	10.86652977,
+                             17,	12.73921971,
+                             18,	14.61190965,
+                             19,	16.79671458,
+                             20,	18.98151951,
+                             21,	22.72689938,
+                             22,	26.47227926,
+                             23,	30.37371663,
+                             24,	34.74332649,
+                             25,	41.14168378,
+                             26,	48.00821355,
+                             27,	54.71868583,
+                             28,	60.33675565,
+                             29,	66.26694045,
+                             30,	73.13347023, 
+                             31,  77.03490759753593), ncol=2, byrow=TRUE)
+rownames(stagesMiller2017) <- as.character(11:31)
+
+
+png(filename = "Figure 4.png", width = 7*300, height = 9*300, res=300, pointsize = 12)
+layout(1:3)
+par(mar=c(4, 4, 1, 1))
+par(xpd=FALSE)
+plot(x=25:40, y=rep(0, length(25:40)), type="n", las=1, ylim=c(0, 10), bty="n", xlab="Incubation temperature in °C", 
+     ylab = "Thermal reaction norm of sexualisation")
+polygon(x=c(seq(from=25, to=40, by=0.1), rev(seq(from=25, to=40, by=0.1))), 
+        y=c(TRNS["2.5%", ], rev(TRNS["97.5%", ])), border = NA, col = "lightgrey")
+lines(x=seq(from=25, to=40, by=0.1), y=TRNS["50%", ], lty=4)
+text(x=ScalePreviousPlot(x=0.02, y=0.95)$x, y=ScalePreviousPlot(x=0.02, y=0.95)$y, labels="A", cex=2)
+
+
+
+par(mar=c(4, 4, 3, 1))
+plot(x=0:80, y=rep(0, 81), type="n", las=1, ylim=c(0, 2.5), bty="n", xlab="Incubation days (26°C)", 
+     ylab = "Sensitivity within the TSP")
+
+polygon(x=c(stagesMiller2017["23", 2], (stagesMiller2017["27", 2]+stagesMiller2017["28", 2])/2,  (stagesMiller2017["27", 2]+stagesMiller2017["28", 2])/2, stagesMiller2017["23", 2]), 
+        y=c(0, 0, 2.5, 2.5), col = "gray", border = NA)
+
+
+# plot(x = seq(from=0.01, to=0.99, by=0.01), Force["50%", ], type="n")
+# lines(x=seq(from=0.01, to=0.99, by=0.01), y=Force["2.5%", ], lty=2)
+# lines(x=seq(from=0.01, to=0.99, by=0.01), y=Force["97.5%", ], lty=2)
+yForce <- c(Force["2.5%", ], rev(Force["97.5%", ]))
+yForce[yForce>2.5] <- 2.5
+polygon(x=stagesMiller2017["23", 2] + ( (stagesMiller2017["27", 2]+stagesMiller2017["28", 2])/2 - stagesMiller2017["23", 2]) * c(seq(from=0.01, to=0.99, by=0.01), rev(seq(from=0.01, to=0.99, by=0.01))), 
+        y=yForce, border = NA, col = "lightgrey")
+lines(x=stagesMiller2017["23", 2] + ( (stagesMiller2017["27", 2]+stagesMiller2017["28", 2])/2 - stagesMiller2017["23", 2]) * seq(from=0.01, to=0.99, by=0.01), y=Force["50%", ], lty=4)
+for (i in 1:nrow(stagesMiller2017)) {
+  segments(x0=stagesMiller2017[i, 2], x1=stagesMiller2017[i, 2], 
+           y0=0, y1=2.5, col="blue", lty=2)
+}
+par(xpd=TRUE)
+text(x=stagesMiller2017["23", 2], y=2.6, labels = "23")
+text(x=stagesMiller2017["27", 2], y=2.6, labels = "27")
+text(x=stagesMiller2017["11", 2], y=2.6, labels = "11")
+text(x=stagesMiller2017["31", 2], y=2.6, labels = "31")
+
+text(x=43, y=2.3, labels="TSP", cex=3)
+
+text(x=ScalePreviousPlot(x=0.02, y=0.95)$x, y=ScalePreviousPlot(x=0.02, y=0.95)$y, labels="B", cex=2)
+
+par(mar=c(4, 4, 1, 1))
+
+plot_errbar(sr_CmFlorida[, "PointEst"], sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"], 
+            x.minus = sr_CmFlorida[, "Lower"], x.plus = sr_CmFlorida[, "Upper"], 
+            y.plus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975"], 
+            y.minus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025"], 
+            las=1, bty="n", xlim=c(0, 1), ylim=c(0, 1), 
+            errbar.tick = 0/50,
+            pch=19, 
+            xlab="Observed sex ratio", 
+            ylab="Predicted sex ratio")
+segments(x0=0, x1=1, y0=0, y1=1, lty=2)
+
+text(x=ScalePreviousPlot(x=0.02, y=0.95)$x, y=ScalePreviousPlot(x=0.02, y=0.95)$y, labels="C", cex=2)
+dev.off()
+
+
+```
+
+
+
+## Modèle TRNS Force TSP
+
+
+```{r}
+
+TRNS_Force_TSP_fitted_flexit <- STRN(Initial_STRN =  c(TRNS_Force_TSP_fixed_flexit$par, TSP)  , 
+                                     fixed.parameters = c('Rho25' = 100)                                                        , 
+                                     embryo.stages = "fitted"                                                     ,
+                                     EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                                     sexratio = "TSP.GrowthWeighted.STRNWeighted.sexratio.mean"                   , 
+                                     tsd=tsd_flexit_ec                                                               , 
+                                     Sexed=sexed                                                                  , 
+                                     Males=males                                                                  ,
+                                     verbose = FALSE                                                              , 
+                                     parallel = TRUE                                                              , 
+                                     zero=1E-9                                                                    ,
+                                     fill=60                                                                      , 
+                                     hessian=FALSE                                                                , 
+                                     itnmax = 1000                                                                ,
+                                     method = c("BFGS")                                                    ) 
+
+save(TRNS_Force_TSP_fitted_flexit, file = file.path("dataOut", "Gompertz", "TRNS_Force_TSP_fitted_flexit.Rdata"))
+TRNS_Force_TSP_fitted_flexit$AICc
+
+
+StatsCm_TRNS_Force_TSP <- info.nests(resultNest_4p_80_CmFlorida, series="all", out="summary", 
+                                     resultmcmc=result_mcmc_4p_80_CmFlorida, 
+                                     replicate.CI=1000, 
+                                     GTRN.CI="MCMC", 
+                                     embryo.stages = "fitted", 
+                                     SexualisationTRN = TRNS_Force_TSP_fitted_flexit, 
+                                     SexualisationTRN.CI = NULL, 
+                                     tsd = tsd_flexit, tsd.mcmc = flexit_CM, tsd.CI = "MCMC", 
+                                     progress=TRUE)
+
+save(StatsCm_TRNS_Force_TSP, file=file.path("dataOut", "StatsCm_TRNS_Force_TSP.Rdata"))
+
+sr <- StatsCm_TRNS_Force_TSP$summary[, c("Series", "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025",
+                                         "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5", 
+                                         "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975")]
+
+plot_errbar(males/sexed, sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"], 
+            y.plus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975"], 
+            y.minus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025"], 
+            las=1, bty="n", xlim=c(0, 1), ylim=c(0, 1), 
+            ylab="Predicted sex ratio")
+segments(x0=0, x1=1, y0=0, y1=1, lty=2)
+cor(x=unname(males/sexed)[!is.na(unname(males/sexed))], y=unname(sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"])[!is.na(unname(males/sexed))])^2
+
+```
+
+## Modèle TRNS TSP
+
+```{r}
+
+TRNS_TSP_fitted_flexit <- STRN(Initial_STRN =  c('DHA' = -582.63858520908752, 
+                                                 'DHH' = 685.20357374674995, 
+                                                 'T12H' = 552.20446499322202,  TSP)  , 
+                               fixed.parameters = c('Rho25' = 100)                                                        , 
+                               embryo.stages = "fitted"                                                     ,
+                               EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                               sexratio = "TSP.GrowthWeighted.STRNWeighted.sexratio.mean"                   , 
+                               tsd=tsd_flexit_ec                                                               , 
+                               Sexed=sexed                                                                  , 
+                               Males=males                                                                  ,
+                               verbose = FALSE                                                              , 
+                               parallel = TRUE                                                              , 
+                               zero=1E-9                                                                    ,
+                               fill=60                                                                      , 
+                               hessian=FALSE                                                                , 
+                               itnmax = 1000                                                                ,
+                               method = c("BFGS")                                                    ) 
+
+save(TRNS_TSP_fitted_flexit, file = file.path("dataOut", "Gompertz", "TRNS_TSP_fitted_flexit.Rdata"))
+TRNS_TSP_fitted_flexit$AICc
+
+StatsCm_TRNS_TSP <- info.nests(resultNest_4p_80_CmFlorida, series="all", out="summary", 
+                               resultmcmc=result_mcmc_4p_80_CmFlorida, 
+                               replicate.CI=1000, 
+                               GTRN.CI="MCMC", 
+                               embryo.stages = "fitted", 
+                               SexualisationTRN = TRNS_TSP_fitted_flexit, 
+                               SexualisationTRN.CI = NULL, 
+                               tsd = tsd_flexit, tsd.mcmc = flexit_CM, tsd.CI = "MCMC", 
+                               progress=TRUE)
+
+save(StatsCm_TRNS_TSP, file=file.path("dataOut", "StatsCm_TRNS_TSP.Rdata"))
+
+sr <- StatsCm_TRNS_TSP$summary[, c("Series", "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025",
+                                   "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5", 
+                                   "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975")]
+
+plot_errbar(males/sexed, sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"], 
+            y.plus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975"], 
+            y.minus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025"], 
+            las=1, bty="n", xlim=c(0, 1), ylim=c(0, 1), 
+            ylab="Predicted sex ratio")
+segments(x0=0, x1=1, y0=0, y1=1, lty=2)
+cor(x=unname(males/sexed)[!is.na(unname(males/sexed))], y=unname(sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"])[!is.na(unname(males/sexed))])^2
+
+```
+
+## Modèle Force TSP
+
+
+```{r}
+
+Force_TSP_fitted_flexit <- STRN(Initial_STRN =  c('dbeta_shape1' = 1.6635328027037435, 
+                                                  'dbeta_shape2' = 0.70615507242195052, 
+                                                  'BeginTSP' = -1.1658907060801547, 
+                                                  'EndTSP' = 1.4008193315143229)  , 
+                                fixed.parameters = NULL                                                        , 
+                                embryo.stages = "fitted"                                                     ,
+                                EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                                sexratio = "TSP.GrowthWeighted.STRNWeighted.sexratio.mean"                   , 
+                                tsd=tsd_flexit_ec                                                               , 
+                                Sexed=sexed                                                                  , 
+                                Males=males                                                                  ,
+                                verbose = FALSE                                                              , 
+                                parallel = TRUE                                                              , 
+                                zero=1E-9                                                                    ,
+                                fill=60                                                                      , 
+                                hessian=FALSE                                                                , 
+                                itnmax = 1000                                                                ,
+                                method = c("BFGS")                                                    ) 
+
+save(Force_TSP_fitted_flexit, file = file.path("dataOut", "Gompertz", "Force_TSP_fitted_flexit.Rdata"))
+Force_TSP_fitted_flexit$AICc
+
+StatsCm_Force_TSP <- info.nests(resultNest_4p_80_CmFlorida, series="all", out="summary", 
+                                resultmcmc=result_mcmc_4p_80_CmFlorida, 
+                                replicate.CI=1000, 
+                                GTRN.CI="MCMC", 
+                                embryo.stages = "fitted", 
+                                SexualisationTRN = Force_TSP_fitted_flexit, 
+                                SexualisationTRN.CI = NULL, 
+                                tsd = tsd_flexit, tsd.mcmc = flexit_CM, tsd.CI = "MCMC", 
+                                progress=TRUE)
+
+save(StatsCm_Force_TSP, file=file.path("dataOut", "StatsCm_Force_TSP.Rdata"))
+
+sr <- StatsCm_TRNS_Force_TSP$summary[, c("Series", "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025",
+                                         "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5", 
+                                         "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975")]
+
+plot_errbar(males/sexed, sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"], 
+            y.plus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975"], 
+            y.minus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025"], 
+            las=1, bty="n", xlim=c(0, 1), ylim=c(0, 1), 
+            ylab="Predicted sex ratio")
+segments(x0=0, x1=1, y0=0, y1=1, lty=2)
+cor(x=unname(males/sexed)[!is.na(unname(males/sexed))], y=unname(sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"])[!is.na(unname(males/sexed))])^2
+```
+
+## Modèle TSP
+
+```{r}
+
+TSP_fitted_flexit <- STRN(Initial_STRN =  c('BeginTSP' = -1.1658907060801547, 
+                                            'EndTSP' = 1.4008193315143229)  , 
+                          fixed.parameters = NULL                                                        , 
+                          embryo.stages = "fitted"                                                     ,
+                          EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                          sexratio = "TSP.GrowthWeighted.STRNWeighted.sexratio.mean"                   , 
+                          tsd=tsd_flexit_ec                                                               , 
+                          Sexed=sexed                                                                  , 
+                          Males=males                                                                  ,
+                          verbose = FALSE                                                              , 
+                          parallel = TRUE                                                              , 
+                          zero=1E-9                                                                    ,
+                          fill=60                                                                      , 
+                          hessian=FALSE                                                                , 
+                          itnmax = 1000                                                                ,
+                          method = c("BFGS")                                                    ) 
+
+save(TSP_fitted_flexit, file = file.path("dataOut", "Gompertz", "TSP_fitted_flexit.Rdata"))
+TSP_fitted_flexit$AICc
+
+StatsCm_Force_TSP <- info.nests(resultNest_4p_80_CmFlorida, series="all", out="summary", 
+                                resultmcmc=result_mcmc_4p_80_CmFlorida, 
+                                replicate.CI=1000, 
+                                GTRN.CI="MCMC", 
+                                embryo.stages = "fitted", 
+                                SexualisationTRN = TSP_fitted_flexit, 
+                                SexualisationTRN.CI = NULL, 
+                                tsd = tsd_flexit, tsd.mcmc = flexit_CM, tsd.CI = "MCMC", 
+                                progress=TRUE)
+
+save(StatsCm_Force_TSP, file=file.path("dataOut", "StatsCm_Force_TSP.Rdata"))
+
+sr <- StatsCm_TRNS_Force_TSP$summary[, c("Series", "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025",
+                                         "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5", 
+                                         "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975")]
+
+plot_errbar(males/sexed, sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"], 
+            y.plus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975"], 
+            y.minus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025"], 
+            las=1, bty="n", xlim=c(0, 1), ylim=c(0, 1), 
+            ylab="Predicted sex ratio")
+segments(x0=0, x1=1, y0=0, y1=1, lty=2)
+cor(x=unname(males/sexed)[!is.na(unname(males/sexed))], y=unname(sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"])[!is.na(unname(males/sexed))])^2
+```
+
+
+## Modèle Force
+
+```{r}
+
+Force_TSP_fixed_flexit <- STRN(Initial_STRN =  c('dbeta_shape1' = 1.6635328027037435, 
+                                                 'dbeta_shape2' = 0.70615507242195052)  , 
+                               fixed.parameters = NULL                                                        , 
+                               embryo.stages = "Chelonia mydas.SCL"                                                     ,
+                               EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                               sexratio = "TSP.GrowthWeighted.STRNWeighted.sexratio.mean"                   , 
+                               tsd=tsd_flexit_ec                                                               , 
+                               Sexed=sexed                                                                  , 
+                               Males=males                                                                  ,
+                               verbose = FALSE                                                              , 
+                               parallel = TRUE                                                              , 
+                               zero=1E-9                                                                    ,
+                               fill=60                                                                      , 
+                               hessian=FALSE                                                                , 
+                               itnmax = 1000                                                                ,
+                               method = c("BFGS")                                                    ) 
+
+save(Force_TSP_fixed_flexit, file = file.path("dataOut", "Gompertz", "Force_TSP_fixed_flexit.Rdata"))
+Force_TSP_fixed_flexit$AICc
+
+StatsCm_Force <- info.nests(resultNest_4p_80_CmFlorida, series="all", out="summary", 
+                            resultmcmc=result_mcmc_4p_80_CmFlorida, 
+                            replicate.CI=1000, 
+                            GTRN.CI="MCMC", 
+                            embryo.stages = "Chelonia mydas.SCL", 
+                            SexualisationTRN = Force_TSP_fixed_flexit, 
+                            SexualisationTRN.CI = NULL, 
+                            tsd = tsd_flexit, tsd.mcmc = flexit_CM, tsd.CI = "MCMC", 
+                            progress=TRUE)
+
+save(StatsCm_Force, file=file.path("dataOut", "StatsCm_Force.Rdata"))
+
+sr <- StatsCm_Force$summary[, c("Series", "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025",
+                                "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5", 
+                                "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975")]
+
+plot_errbar(males/sexed, sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"], 
+            y.plus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.975"], 
+            y.minus = sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.025"], 
+            las=1, bty="n", xlim=c(0, 1), ylim=c(0, 1), 
+            ylab="Predicted sex ratio")
+segments(x0=0, x1=1, y0=0, y1=1, lty=2)
+cor(x=unname(males/sexed)[!is.na(unname(males/sexed))], y=unname(sr[names(sexed), "TSP.GrowthWeighted.STRNWeighted.sexratio.quantile_0.5"])[!is.na(unname(males/sexed))])^2
+
+
+```
+
+
+```{r}
+compare_AICc(Model1=TW_TSP_fixed_flexit, Model2=GW_TSP_fixed_flexit, Model3=TRNS_TSP_fixed_flexit, Model4=Force_TSP_fixed_flexit, Model5=TSP_fitted_flexit, Model6=TRNS_Force_TSP_fixed_flexit, Model7=TRNS_TSP_fitted_flexit, Model8=Force_TSP_fitted_flexit, MOdel9=TRNS_Force_TSP_fitted_flexit)
+```
+
+## Force TRNS with TW
+
+```{r}
+TW_TRNS_Force_TSP_fixed_flexit <- STRN(Initial_STRN =  c('DHA' = -719.57625637837077, 
+                                                         'DHH' = 685.20357374674995, 
+                                                         'T12H' = 552.20446499322202, 
+                                                         'dbeta_shape1' = 1.7253225235177667, 
+                                                         'dbeta_shape2' = 0.80204479524247529)                                                           , 
+                                       fixed.parameters = c('Rho25' = 100)                                                        , 
+                                       embryo.stages = "Chelonia mydas.SCL"                                                     ,
+                                       EmbryoGrowthTRN=resultNest_4p_80_CmFlorida_ec                                   , 
+                                       sexratio = "TSP.TimeWeighted.STRNWeighted.sexratio.mean"                   , 
+                                       tsd=tsd_flexit_ec                                                               , 
+                                       Sexed=sexed                                                                  , 
+                                       Males=males                                                                  ,
+                                       verbose = FALSE                                                              , 
+                                       parallel = TRUE                                                              , 
+                                       zero=1E-9                                                                    ,
+                                       fill=60                                                                      , 
+                                       hessian=FALSE                                                                , 
+                                       itnmax = 1000                                                                ,
+                                       method = c("BFGS")                                                    ) 
+save(TW_TRNS_Force_TSP_fixed_flexit, file = file.path("dataOut", "Gompertz", "TW_TRNS_Force_TSP_fixed_flexit.Rdata"))
+TW_TRNS_Force_TSP_fixed_flexit$AICc
+```
+
+# Sex ratio
+
+```{r}
+load(file = file.path("dataOut", "Gompertz", "TRNS_Force_TSP_fixed_flexit.Rdata"))
+load(file=file.path("dataOut", "MCMC_TRNS_Force_TSP_fixed_flexit.Rdata"))
+load(file=file.path("dataOut", "Gompertz", "result_mcmc_4p_80_CmFlorida.Rdata"))
+load(file=file.path("dataOut", "Gompertz", "resultNest_4p_80_CmFlorida.Rdata"))
+load(file=file.path("dataOut", "tsd_flexit.Rdata"))
+load(file=file.path("dataOut", "flexit_CM.Rdata"))
+```
+
+```{r}
+simulateDriver <- function (time = 1:10000, autocorrelation.length = 100, 
+                            output.min = 0, output.max = 100) 
+{
+  if (!is.vector(time)) {
+    time <- seq(1, floor(time), by = 1)
+    if (length(time) == 0) {
+      error("Time needs to be an integer higher than 1, or a vector of integers.")
+    }
+  }
+  if (autocorrelation.length > length(time)/2) {
+    autocorrelation.length <- floor(length(time)/2)
+  }
+  driver <- filter(rnorm(max(time)-min(time)+1), filter = rep(1, autocorrelation.length), 
+                   circular = TRUE)
+  driver <- as.vector(driver)
+  if ((!is.null(output.min)) & (!is.null(output.max))) {
+    old.min <- min(driver)
+    old.max <- max(driver)
+    driver = ((driver - old.min)/(old.max - old.min)) * (output.max - output.min) + 
+      output.min
+  }
+  driver[time-min(time)+1]
+  return(driver)
+}
+```
+
+```{r}
+Time <- seq(from=0, to=300*24*60, by=15)
+
+pGTRN <- as.parameters(result_mcmc_4p_80_CmFlorida, index="all")
+mean_pGTRN <- apply(pGTRN, MARGIN = 2, FUN = mean)
+sd_pGTRN <- apply(pGTRN, MARGIN = 2, FUN = sd)
+
+plot(result_mcmc_4p_80_CmFlorida, parameters = "DHA", what = "MarkovChain")
+plot(result_mcmc_4p_80_CmFlorida, parameters = "DHH", what = "MarkovChain")
+plot(result_mcmc_4p_80_CmFlorida, parameters = "T12H", what = "MarkovChain")
+plot(result_mcmc_4p_80_CmFlorida, parameters = "Rho25", what = "MarkovChain")
+
+pGTRN_Best <- as.parameters(result_mcmc_4p_80_CmFlorida, index="best")
+
+hist(pGTRN[, "DHH"])
+
+
+resultNest_4p_80_CmFlorida_ec <- resultNest_4p_80_CmFlorida
+TRNS_Force_TSP_fixed_flexit_ec <- TRNS_Force_TSP_fixed_flexit
+tsd_flexit_ec <- tsd_flexit
+
+set.seed(1)
+
+# En faisant ça je perds la structure de covariance
+# Pas bonne idée
+# Il faut aussi que je trouve un moyen de n'envoyer que les paramètres dont j'ai besoin. Pas tout
+
+funx <- function(i) {
+  MeanT <- runif(n = 1, min=25, max=35)
+  AmplitudeT <- runif(n = 1, min=0, max=5)
+  lag <- runif(n = 1, min=0, max=20)
+  y <- simulateDriver(time = 1:length(Time),
+                      autocorrelation.length = lag*24*60/15,
+                      output.min = MeanT-AmplitudeT,
+                      output.max = MeanT+AmplitudeT)
+  temp_model <- data.frame(Time=Time, nest=y)
+  Nest <- FormatNests(data=temp_model, previous = NULL)
+  resultNest_4p_80_CmFlorida_ec$par <- result_mcmc_4p_80_CmFlorida$resultMCMC$`1`[sample(1:1000, 1), 1:4]
+  
+  TRNS_Force_TSP_fixed_flexit_ec$par <- MCMC_TRNS_Force_TSP_fixed_flexit$resultMCMC$`1`[sample(1:1000, 1), 1:5]
+  
+  tsd_flexit_ec$par <- flexit_CM$resultMCMC$`1`[sample(1:2000, 1), 1:3]
+  Nest_out    <- info.nests(NestsResult=resultNest_4p_80_CmFlorida_ec                  , 
+                            temperatures = Nest                                       ,
+                            SexualisationTRN=TRNS_Force_TSP_fixed_flexit_ec           , 
+                            tsd = tsd_flexit_ec                                       ,
+                            out = "summary"                                           , 
+                            embryo.stages = "Chelonia mydas.SCL"                      , 
+                            stop.at.hatchling.metric = TRUE                           , 
+                            metric.end.incubation	= "hatchling.metric"                , 
+                            replicate.CI = 0                                          , 
+                            parallel = FALSE                                          ) 
+  
+  sr <- Nest_out$summary$TSP.GrowthWeighted.STRNWeighted.sexratio.mean
+  ID <- Nest_out$summary$TSP.GrowthWeighted.STRNWeighted
+  return(c(resultNest_4p_80_CmFlorida_ec$par, 
+           TRNS_Force_TSP_fixed_flexit_ec$par ,
+           tsd_flexit_ec$par, lag=lag, MeanT=MeanT, 
+           AmplitudeT=AmplitudeT, SexRatio=sr, 
+           ID=Nest_out$summary$Incubation.length.mean))
+  
+}
+x <- 1:100000
+m <- universalmclapply(X=x, FUN=funx, forking=TRUE, progressbar = TRUE, mc.cores = 64)
+
+df <- do.call(rbind.data.frame, m)
+colnames(df) <- c("DHA", "DHH", "T12H", "Rho25", "TRNS_DHA", "TRNS_DHH", "TRNS_T12H", "dbeta_shape1", 
+                  "dbeta_shape2", "P", "SL", "SH", "lag", "MeanT", "AmplitudeT", 
+                  "SexRatio", "ID")
+for (i in 1:ncol(df)) df[, i] <- as.numeric(df[, i])
+df <- na.omit(df)
+df <- as.data.frame(df)
+
+
+save(df, file=file.path("dataOut", "Gompertz", "df.Rdata"))
+
+```
+
+```{r}
+load(file=file.path("dataOut", "Gompertz", "df.Rdata"))
+
+hist(df[, "SexRatio"])
+hist(df[, "ID"]/60/24)
+
+plot(df[, "ID"]/60/24, df[, "SexRatio"], xlim=c(40, 100), pch=".", ylab="Predicted male relative frequency", 
+     xlab="Incubation duration in days", las=1, bty="n")
+
+df2 <- df[, c("DHA", "DHH", "T12H", "Rho25", "TRNS_DHA", "TRNS_DHH", "TRNS_T12H", "dbeta_shape1", 
+              "dbeta_shape2", "P", "SL", "SH", "lag", "MeanT", "AmplitudeT", 
+              "SexRatio")]
+
+colnames(df2) <- c("DHA", "DHH", "T12H", "Rho25", "TRNS.DHA", "TRNS.DHH", "TRNS.T12H", "S-TSP.shape1", 
+                   "S-TSP.shape2", "P", "SL", "SH", "lag", "MeanT", "AmplitudeT", 
+                   "Male relative frequency")
+
+df2_clean <- IC_clean_data(data=df2, debug = TRUE)
+
+# One spurious link
+cor_threshold2 <- IC_threshold_matrix(data=df2_clean, significance.level=0.05)
+# No spurious link
+cor_threshold2 <- IC_threshold_matrix(data=df2_clean, significance.level=0.04)
+# 10 times lower
+cor_threshold2 <- IC_threshold_matrix(data=df2_clean, significance.level=0.004)
+
+set.seed(1)
+plot(cor_threshold2, show.legend.strength=FALSE, show.legend.direction = FALSE, title ="Male relative frequency")
+
+df3 <- df[, c("DHA", "DHH", "T12H", "Rho25", "TRNS_DHA", "TRNS_DHH", "TRNS_T12H", "dbeta_shape1", 
+              "dbeta_shape2", "P", "SL", "SH", "lag", "MeanT", "AmplitudeT", 
+              "ID")]
+colnames(df3) <- c("DHA", "DHH", "T12H", "Rho25", "TRNS_DHA", "TRNS_DHH", "TRNS_T12H", "S-TSP.shape1", 
+                   "S-TSP.shape2", "P", "SL", "SH", "lag", "Mean.T", "Amplitude.T", 
+                   "Incubation duration")
+
+df3_clean <- IC_clean_data(data=df3, debug = TRUE)
+# One spurious link
+cor_threshold3 <- IC_threshold_matrix(data=df3_clean, significance.level=0.06)
+# No spurious link
+cor_threshold3 <- IC_threshold_matrix(data=df3_clean, significance.level=0.05)
+# 10 times lower
+cor_threshold3 <- IC_threshold_matrix(data=df3_clean, significance.level=0.005)
+
+png(filename = "ID_SR.png", width = 7*300, height = 7*300, pointsize = 12, res=300)
+par(mar=c(4, 4, 1, 1))
+plot(df[, "ID"]/60/24, df[, "SexRatio"], xlim=c(40, 100), pch=".", ylab="Predicted male relative frequency", 
+     xlab="Incubation duration in days", las=1, bty="n")
+dev.off()
+
+
+png(filename = "IC_ID_SR.png", width = 8*300, height = 5*300, pointsize = 12, res=300)
+svg(filename = "IC_ID_SR.svg", width = 9, height = 5, pointsize = 12)
+
+
+layout(mat = matrix(1:2, ncol=2))
+set.seed(2)
+par(mar=c(1, 1, 3, 1))
+plot(cor_threshold2, show.legend.strength=FALSE, show.legend.direction = FALSE, title ="Male relative frequency")
+text(x=ScalePreviousPlot(x=0.95, y=0.05)$x, y=ScalePreviousPlot(x=0.95, y=0.05)$y, 
+     labels = "A", cex=2)
+par(mar=c(1, 1, 3, 1))
+set.seed(1)
+plot(cor_threshold3, show.legend.strength=FALSE, show.legend.direction = FALSE, title ="Incubation duration")
+text(x=ScalePreviousPlot(x=0.95, y=0.05)$x, y=ScalePreviousPlot(x=0.95, y=0.05)$y, 
+     labels = "B", cex=2)
+dev.off()
+```
+
+
