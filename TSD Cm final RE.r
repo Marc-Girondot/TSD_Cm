@@ -1,7 +1,7 @@
 library(embryogrowth)
 library(loo)
 library(brms)
-library(openxlsx)
+# library(openxlsx)
 
 Cm_ROSIE <- subset(ROSIE, subset = Species == "Chelonia_mydas")
 nrow(Cm_ROSIE)
@@ -43,6 +43,9 @@ Cm <- subset(Cm, subset = (Cm$Mean_Temp_SD < 0.2)| (is.na(Cm$Mean_Temp_SD)))
 # Cm$Mean_Temp
 Cm <- Cm[, c("Males", "Females", "Intersex", "Total_Sexed", "RMU.2023", "Clutch", "ID", "Mean_Temp", "Source")]
 
+library(openxlsx)
+write.xlsx(Cm, file="SM2.xlsx")
+
 sum(Cm$Total_Sexed)
 
 length(unique(Cm$Mean_Temp))
@@ -63,7 +66,7 @@ for (i in unique(Cm$Source)) {
                   RMU.2023=Cm.int$RMU.2023[1]))
 }
 
-write.xlsx(Cm.SM2, file=file.path("dataOut", "Cm_SM2.xlsx"))
+write.xlsx(Cm.SM2, file="Cm_SM2.xlsx")
 
 #################################
 
@@ -593,14 +596,27 @@ llok <- loo_compare(list(flexit_noRMU_noID_noClutch=flexit_noRMU_noID_noClutch_l
                        flexit_RMU_noID_Clutch=flexit_RMU_noID_Clutch_loo))
 print(llok, simplify=FALSE)
 
+llokweight <- loo_model_weights(list(flexit_noRMU_noID_noClutch=flexit_noRMU_noID_noClutch_loo, 
+                       flexit_noRMU_noID_Clutch=flexit_noRMU_noID_Clutch_loo, 
+                       flexit_RMU_noID_noClutch=flexit_RMU_noID_noClutch_loo))
+
   a <- rnorm(10000, mean = llok[1, c(7)], sd=llok[1, c(8)])
   b <- rnorm(10000, mean = llok[2, c(7)], sd=llok[2, c(8)])
   c <- rnorm(10000, mean = llok[3, c(7)], sd=llok[3, c(8)])
   d <- rnorm(10000, mean = llok[4, c(7)], sd=llok[4, c(8)])
-specify_decimal(sum(a<b)/length(a), 2)
-specify_decimal(sum(b<c)/length(b), 2)
-specify_decimal(sum(c<d)/length(c), 2)
+  
+  tt <- c(a, b, c, d)
 
+v1 <- mean(sapply(a, FUN=function(i) sum(i<tt)/length(tt)))
+v2 <- mean(sapply(b, FUN=function(i) sum(i<tt)/length(tt)))
+v3 <- mean(sapply(c, FUN=function(i) sum(i<tt)/length(tt)))
+v4 <- mean(sapply(d, FUN=function(i) sum(i<tt)/length(tt)))
+
+vv1 <- v1/(v1+v2+v3+v4)
+vv2 <- v2/(v1+v2+v3+v4)
+vv3 <- v3/(v1+v2+v3+v4)
+vv4 <- v4/(v1+v2+v3+v4)
+  
 tsd_flexit <- tsd(males = Cm$Males, females = Cm$Females, temperatures = Cm$Mean_Temp, 
                   equation = "flexit**", parameters.initial = c(P=29, SL=2, SH=2))
 
@@ -627,9 +643,10 @@ par(mar=c(3, 4, 1, 2))
 plot_errbar(x=1:4, y=llok[, c(7)], errbar.y = 1.96*llok[, c(8)], xaxt="n", las=1, 
             ylab="LOOIC", bty="n", xlab="")
 axis(1, at=1:4, labels = c("None", "RMU", "Clutch", "RMU/Clutch"))
-text(x = 1.5, y=llok[1, c(7)], labels=specify_decimal(sum(a<b)/length(a), 2), pos=3)
-text(x = 2.5, y=llok[2, c(7)], labels=specify_decimal(sum(b<c)/length(b), 2), pos=3)
-text(x = 3.5, y=llok[3, c(7)], labels=specify_decimal(sum(c<d)/length(c), 2), pos=3)
+text(x = 1, y=llok[1, c(7)], labels=specify_decimal(vv1, 3), pos=4)
+text(x = 2, y=llok[2, c(7)], labels=specify_decimal(vv2, 3), pos=4)
+text(x = 3, y=llok[3, c(7)], labels=specify_decimal(vv3, 3), pos=4)
+text(x = 4, y=llok[4, c(7)], labels=specify_decimal(vv4, 3), pos=2)
 
 text(x=ScalePreviousPlot(x=0.95, y=0.1)$x, y=ScalePreviousPlot(x=0.95, y=0.1)$y,
      labels = "A", cex=2)
@@ -638,12 +655,12 @@ text(x=ScalePreviousPlot(x=0.95, y=0.1)$x, y=ScalePreviousPlot(x=0.95, y=0.1)$y,
 # par(mar=c(4, 4, 1, 2))
 par(xpd=TRUE)
 plot(tsd_flexit, resultmcmc = flexit_CM, show.observations=TRUE, 
-     replicate.CI = 2000, pch=sapply(Cm$RMU.2023, FUN=function(x) switch(EXPR = x, 
+     replicate.CI = 2000, pch=unlist(sapply(Cm$RMU.2023, FUN=function(x) switch(EXPR = x, 
                                                                          "Southwest Pacific"=3, 
                                                                          "South Atlantic"=0, 
                                                                          "Northwest Indian"=16, 
                                                                          "North Atlantic"=15, 
-                                                                         "East Indian and Southeast Asia"=1)), 
+                                                                         "East Indian and Southeast Asia"=1))), 
      show.observations.sd = FALSE, use.ggplot = FALSE, xlim=c(25, 35), mar=c(4, 4, 2.5, 1))
 
 legend("topright", pch=c(15, 0, 16, 1, 3), legend = c("NA", "SA", "NWI", "EISA", "SP"))
