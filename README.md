@@ -11,8 +11,6 @@ All the results of the analyses are stored in dataOut folder.
 
 The CM.Rmd can be knitred.
 
-###########
-
 The last version of embryogrowth and HelpersMG packages must always be used. The version available in CRAN is generally not the last one. These functions can be used to ensure to use the last version.
 
 install.packages("embryogrowth")
