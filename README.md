@@ -1,4 +1,4 @@
-# Workflow for Green Sea Turtles temperature-dependent sex determination 
+# Workflow for Green Sea Turtle temperature-dependent sex determination analysis
 Code to analyze Temperature-Dependent Sex Determination in green turtles, *Chelonia mydas*.
 
 Code used in the submitted publication: 
