@@ -6,9 +6,9 @@ The zip folder must be opened in Rstudio and the code for tsd analysis at consta
 
 # ACCESS INFORMATION
 
-## 1. Licenses/restrictions placed on the data or code
+## 1. Licenses
+
 CC0 1.0 Universal (CC0 1.0)
-Public Domain Dedication
 
 ## 2. Data derived from other sources
 
