@@ -18,7 +18,7 @@ Krueger, C. J., & Janzen, F. J. (2022). ROSIE, a database of reptilian offspring
 
 The ROSIE database is embeded in R package embryogrowth:
 
-Girondot, M. (2025). embryogrowth: Tools to analyze the thermal reaction norm of embryo growth. (Version 10.4) The Comprehensive R Archive Network. https://CRAN.R-project.org/package=embryogrowth
+Girondot, M. (2025). embryogrowth: Tools to analyze the thermal reaction norm of embryo growth. (Version >10.2) The Comprehensive R Archive Network. https://CRAN.R-project.org/package=embryogrowth
 
 ## 3. Recommended citation for this data/code archive
 
@@ -63,7 +63,7 @@ install.packages("http://marc.girondot.free.fr/CRAN/HelpersMG.tar.gz", repos=NUL
 
 # REFERENCES
 
-Girondot, M. (2025). embryogrowth: Tools to analyze the thermal reaction norm of embryo growth. (Version 10.4) The Comprehensive R Archive Network. https://CRAN.R-project.org/package=embryogrowth
+Girondot, M. (2025). embryogrowth: Tools to analyze the thermal reaction norm of embryo growth. (Version 10.3) The Comprehensive R Archive Network. https://CRAN.R-project.org/package=embryogrowth
 
 Girondot, M. (2025). HelpersMG: Tools for Environmental Analyses, Ecotoxicology and Various R Functions. (Version 6.6) The Comprehensive R Archive Network. https://CRAN.R-project.org/package=HelpersMG
 
