@@ -565,6 +565,7 @@ flexit_RMU_noID_Clutch <- brm(
   chains = getOption("mc.cores"),
   cores = getOption("mc.cores"),
   sample_prior = TRUE, 
+  thin = 10, 
   warmup = 10000,
   iter = 50000,
   prior = prior_ini, 
@@ -587,35 +588,20 @@ library(loo)
 flexit_noRMU_noID_noClutch_loo <- loo(flexit_noRMU_noID_noClutch)
 flexit_noRMU_noID_Clutch_loo <- loo(flexit_noRMU_noID_Clutch)
 flexit_RMU_noID_noClutch_loo <- loo(flexit_RMU_noID_noClutch)
-flexit_RMU_noID_Clutch_loo <- loo(flexit_RMU_noID_Clutch)
+flexit_RMU_noID_Clutch_loo <- loo(flexit_RMU_noID_Clutch, nsamples=4000)
 
 
 llok <- loo_compare(list(flexit_noRMU_noID_noClutch=flexit_noRMU_noID_noClutch_loo, 
-                       flexit_noRMU_noID_Clutch=flexit_noRMU_noID_Clutch_loo, 
                        flexit_RMU_noID_noClutch=flexit_RMU_noID_noClutch_loo, 
+                       flexit_noRMU_noID_Clutch=flexit_noRMU_noID_Clutch_loo, 
                        flexit_RMU_noID_Clutch=flexit_RMU_noID_Clutch_loo))
 print(llok, simplify=FALSE)
 
 llokweight <- loo_model_weights(list(flexit_noRMU_noID_noClutch=flexit_noRMU_noID_noClutch_loo, 
-                       flexit_noRMU_noID_Clutch=flexit_noRMU_noID_Clutch_loo, 
-                       flexit_RMU_noID_noClutch=flexit_RMU_noID_noClutch_loo))
-
-  a <- rnorm(10000, mean = llok[1, c(7)], sd=llok[1, c(8)])
-  b <- rnorm(10000, mean = llok[2, c(7)], sd=llok[2, c(8)])
-  c <- rnorm(10000, mean = llok[3, c(7)], sd=llok[3, c(8)])
-  d <- rnorm(10000, mean = llok[4, c(7)], sd=llok[4, c(8)])
-  
-  tt <- c(a, b, c, d)
-
-v1 <- mean(sapply(a, FUN=function(i) sum(i<tt)/length(tt)))
-v2 <- mean(sapply(b, FUN=function(i) sum(i<tt)/length(tt)))
-v3 <- mean(sapply(c, FUN=function(i) sum(i<tt)/length(tt)))
-v4 <- mean(sapply(d, FUN=function(i) sum(i<tt)/length(tt)))
-
-vv1 <- v1/(v1+v2+v3+v4)
-vv2 <- v2/(v1+v2+v3+v4)
-vv3 <- v3/(v1+v2+v3+v4)
-vv4 <- v4/(v1+v2+v3+v4)
+                                     flexit_RMU_noID_noClutch=flexit_RMU_noID_noClutch_loo, 
+                                     flexit_noRMU_noID_Clutch=flexit_noRMU_noID_Clutch_loo, 
+                                     flexit_RMU_noID_Clutch=flexit_RMU_noID_Clutch_loo))
+llokweight
   
 tsd_flexit <- tsd(males = Cm$Males, females = Cm$Females, temperatures = Cm$Mean_Temp, 
                   equation = "flexit**", parameters.initial = c(P=29, SL=2, SH=2))
@@ -636,17 +622,21 @@ apply(outFl, MARGIN=2, quantile, probs = c(0.025, 0.5, 0.975))
 
 
 library(HelpersMG)
-svg(filename = 'Figure 1.svg', width=7, height=7, pointsize=12)
+# svg(filename = 'Figure 1.svg', width=7, height=7, pointsize=12)
 png(filename = 'Figure 1.png', width=7*300, height=7*300, pointsize=12, res=300)
 layout(1:2)
 par(mar=c(3, 4, 1, 2))
-plot_errbar(x=1:4, y=llok[, c(7)], errbar.y = 1.96*llok[, c(8)], xaxt="n", las=1, 
+plot_errbar(x=1:4, y=llok[c("flexit_noRMU_noID_noClutch", "flexit_RMU_noID_noClutch", 
+                            "flexit_noRMU_noID_Clutch", 
+                            "flexit_RMU_noID_Clutch"), "looic"], 
+            errbar.y = 1.96*llok[c("flexit_noRMU_noID_noClutch", "flexit_RMU_noID_noClutch", "flexit_noRMU_noID_Clutch", 
+                                                                                        "flexit_RMU_noID_Clutch"), "se_looic"], xaxt="n", las=1, 
             ylab="LOOIC", bty="n", xlab="")
-axis(1, at=1:4, labels = c("None", "RMU", "Clutch", "RMU/Clutch"))
-text(x = 1, y=llok[1, c(7)], labels=specify_decimal(vv1, 3), pos=4)
-text(x = 2, y=llok[2, c(7)], labels=specify_decimal(vv2, 3), pos=4)
-text(x = 3, y=llok[3, c(7)], labels=specify_decimal(vv3, 3), pos=4)
-text(x = 4, y=llok[4, c(7)], labels=specify_decimal(vv4, 3), pos=2)
+axis(1, at=1:4, labels = c("None", "RMU", "Clutch", "Clutch in RMU"))
+text(x = 1, y=llok["flexit_noRMU_noID_noClutch", "looic"], labels=specify_decimal(llokweight["flexit_noRMU_noID_noClutch"], 3), pos=4)
+text(x = 2, y=llok["flexit_RMU_noID_noClutch", "looic"], labels=specify_decimal(llokweight["flexit_RMU_noID_noClutch"], 3), pos=4)
+text(x = 3, y=llok["flexit_noRMU_noID_Clutch", "looic"], labels=specify_decimal(llokweight["flexit_noRMU_noID_Clutch"], 3), pos=4)
+text(x = 4, y=llok["flexit_RMU_noID_Clutch", "looic"], labels=specify_decimal(llokweight["flexit_RMU_noID_Clutch"], 3), pos=2)
 
 text(x=ScalePreviousPlot(x=0.95, y=0.1)$x, y=ScalePreviousPlot(x=0.95, y=0.1)$y,
      labels = "A", cex=2)
